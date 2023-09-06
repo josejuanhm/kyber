@@ -4,9 +4,15 @@
 #include "kem.h"
 #include "randombytes.h"
 
-#define NTESTS 1000
+#include "fpau_switches.h"
 
-static int test_keys()
+#define NTESTS 10000
+
+#ifdef UART
+#include "uart.h"
+#endif
+
+static int test_keys(unsigned int i)
 {
   uint8_t pk[CRYPTO_PUBLICKEYBYTES];
   uint8_t sk[CRYPTO_SECRETKEYBYTES];
@@ -14,19 +20,88 @@ static int test_keys()
   uint8_t key_a[CRYPTO_BYTES];
   uint8_t key_b[CRYPTO_BYTES];
 
+#ifdef PROFILING_STAGES
+  register uint32_t cycle_start  asm("s2");
+  register uint32_t cycle_end    asm("s3");
+  register uint32_t cycle_start2 asm("s4");
+  register uint32_t cycle_end2   asm("s5");
+  register uint32_t cycle_start3 asm("s6");
+  register uint32_t cycle_end3   asm("s7");
+
+  static float keys_avg = 0;
+  static float enc_avg  = 0;
+  static float dec_avg  = 0;
+#endif
+
+#ifdef UART
+  uart_send_string("\n\rCreate initial keys");
+#endif
+
+#ifdef PROFILING_STAGES
+  asm("csrrs s2, "TICKS_REGISTER", zero");
+#endif
   //Alice generates a public key
   crypto_kem_keypair(pk, sk);
+#ifdef PROFILING_STAGES
+  asm("csrrs s3, "TICKS_REGISTER", zero");
+  print_runtime(cycle_start, cycle_end);
+  keys_avg = ((cycle_end - cycle_start) + i*keys_avg) / (i+1); // obtaining average per new sample
+#endif
 
+#ifdef UART
+  uart_send_string("\nEncode, create key b");
+#endif
+
+#ifdef PROFILING_STAGES
+  asm("csrrs s4, "TICKS_REGISTER", zero");
+#endif
   //Bob derives a secret key and creates a response
   crypto_kem_enc(ct, key_b, pk);
+#ifdef PROFILING_STAGES
+  asm("csrrs s5, "TICKS_REGISTER", zero");
+  print_runtime(cycle_start2, cycle_end2);
+  enc_avg = ((cycle_end2 - cycle_start2) + i*enc_avg) / (i+1);
+#endif
 
+#ifdef UART
+  uart_send_string("\nDecode, create key a");
+#endif
+
+#ifdef PROFILING_STAGES
+  asm("csrrs s6, "TICKS_REGISTER", zero");
+#endif
   //Alice uses Bobs response to get her shared key
   crypto_kem_dec(key_a, ct, sk);
+#ifdef PROFILING_STAGES
+  asm("csrrs s7, "TICKS_REGISTER", zero");
+  print_runtime(cycle_start3, cycle_end3);
+  dec_avg = ((cycle_end3 - cycle_start3) + i*dec_avg) / (i+1);
+#endif
 
   if(memcmp(key_a, key_b, CRYPTO_BYTES)) {
-    printf("ERROR keys\n");
+#ifdef UART
+    uart_send_string("\n\rERROR keys");
+#endif
     return 1;
   }
+
+#ifdef PROFILING_STAGES
+  // print average runtimes
+  if (i == NTESTS - 1)
+  {
+    itoa(pbuf, (unsigned int)keys_avg, 10);
+    uart_send_string("\n\rKeys average: ");
+    uart_send_string(str);
+
+    itoa(pbuf, (unsigned int)enc_avg, 10);
+    uart_send_string("\nEncode average: ");
+    uart_send_string(str);
+
+    itoa(pbuf, (unsigned int)dec_avg, 10);
+    uart_send_string("\nDecode average: ");
+    uart_send_string(str);
+  }
+#endif
 
   return 0;
 }
@@ -52,7 +127,7 @@ static int test_invalid_sk_a()
   crypto_kem_dec(key_a, ct, sk);
 
   if(!memcmp(key_a, key_b, CRYPTO_BYTES)) {
-    printf("ERROR invalid sk\n");
+    uart_send_string("ERROR invalid sk\n");
     return 1;
   }
 
@@ -87,7 +162,7 @@ static int test_invalid_ciphertext()
   crypto_kem_dec(key_a, ct, sk);
 
   if(!memcmp(key_a, key_b, CRYPTO_BYTES)) {
-    printf("ERROR invalid ciphertext\n");
+    uart_send_string("ERROR invalid ciphertext\n");
     return 1;
   }
 
@@ -100,16 +175,17 @@ int main(void)
   int r;
 
   for(i=0;i<NTESTS;i++) {
-    r  = test_keys();
+    r  = test_keys(i);
     r |= test_invalid_sk_a();
     r |= test_invalid_ciphertext();
     if(r)
       return 1;
   }
 
+/*
   printf("CRYPTO_SECRETKEYBYTES:  %d\n",CRYPTO_SECRETKEYBYTES);
   printf("CRYPTO_PUBLICKEYBYTES:  %d\n",CRYPTO_PUBLICKEYBYTES);
   printf("CRYPTO_CIPHERTEXTBYTES: %d\n",CRYPTO_CIPHERTEXTBYTES);
-
+*/
   return 0;
 }

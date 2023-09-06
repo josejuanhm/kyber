@@ -52,7 +52,7 @@ int crypto_kem_enc(uint8_t *ct,
                    uint8_t *ss,
                    const uint8_t *pk)
 {
-  uint8_t buf[2*KYBER_SYMBYTES];
+  uint8_t buf[2*KYBER_SYMBYTES] = {0};
   /* Will contain key, coins */
   uint8_t kr[2*KYBER_SYMBYTES];
 

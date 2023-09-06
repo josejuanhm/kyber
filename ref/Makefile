@@ -1,13 +1,31 @@
-CC ?= /usr/bin/cc
-CFLAGS += -Wall -Wextra -Wpedantic -Wmissing-prototypes -Wredundant-decls \
-  -Wshadow -Wpointer-arith -O3 -fomit-frame-pointer
+ifdef ORCA
+ORCA_ROOT ?= ../../../riscv_cores/orca
+RISCV_TESTS_DIR ?= $(ORCA_ROOT)/software/riscv-tests
+RISCV_ENV_DIR   ?= $(RISCV_TESTS_DIR)/env
+
+#Include software from orca_lib
+ORCA_LIB ?= $(ORCA_ROOT)/software/orca_lib
+SOURCES += full-crt.s $(ORCA_LIB)/orca_exceptions.c
+INC_DIRS = -I$(ORCA_ROOT)/systems/zedboard -I$(RISCV_ENV_DIR) -I$(ORCA_LIB)
+
+OBJCOPY = /opt/riscv/bin/riscv32-unknown-elf-objcopy
+endif #ORCA
+
+CC=/opt/riscv/bin/riscv32-unknown-elf-gcc
+
+ifdef ORCA
+CFLAGS += -march=rv32im -mno-explicit-relocs -g -MD -Wall -std=gnu99 -Wmisleading-indentation -static -nostartfiles -Xlinker -T link.ld $(INC_DIRS) -O3
+else
+CFLAGS += -march=rv32i_zicsr_zifencei -mabi=ilp32 -g -MD -Wall -std=gnu99 -Ttext 0x00000000 -mno-explicit-relocs -O3 -D STEEL
+endif
+
 NISTFLAGS += -Wno-unused-result -O3 -fomit-frame-pointer
 RM = /bin/rm
 
-SOURCES = kex.c kem.c indcpa.c polyvec.c poly.c ntt.c cbd.c reduce.c verify.c
+SOURCES += kem.c indcpa.c polyvec.c poly.c ntt.c cbd.c reduce.c verify.c uart.c
 SOURCESKECCAK = $(SOURCES) fips202.c symmetric-shake.c
 SOURCESNINETIES = $(SOURCES) sha256.c sha512.c aes256ctr.c symmetric-aes.c
-HEADERS = params.h kex.h kem.h indcpa.h polyvec.h poly.h ntt.h cbd.h reduce.c verify.h symmetric.h
+HEADERS = params.h kex.h kem.h indcpa.h polyvec.h poly.h ntt.h cbd.h reduce.c verify.h symmetric.h uart.h fpau_switches.h
 HEADERSKECCAK = $(HEADERS) fips202.h
 HEADERSNINETIES = $(HEADERS) aes256ctr.h sha2.h
 
@@ -72,12 +90,24 @@ libpqcrystals_kyber1024_ref.so: $(SOURCES) $(HEADERS) symmetric-shake.c
 
 test_kyber512: $(SOURCESKECCAK) $(HEADERSKECCAK) test_kyber.c randombytes.c
 	$(CC) $(CFLAGS) -DKYBER_K=2 $(SOURCESKECCAK) randombytes.c test_kyber.c -o test_kyber512
+test_kyber512.ihex: test_kyber512
+	$(OBJCOPY) -O ihex $< $@
+test_kyber512.coe: test_kyber512
+	python $(ORCA_ROOT)/tools/hex2coe.py $<.hex -o $@
 
 test_kyber768: $(SOURCESKECCAK) $(HEADERSKECCAK) test_kyber.c randombytes.c
 	$(CC) $(CFLAGS) -DKYBER_K=3 $(SOURCESKECCAK) randombytes.c test_kyber.c -o test_kyber768
+test_kyber768.ihex: test_kyber768
+	$(OBJCOPY) -O ihex $< $@
+test_kyber768.coe: test_kyber768
+	python $(ORCA_ROOT)/tools/hex2coe.py $<.hex -o $@
 
 test_kyber1024: $(SOURCESKECCAK) $(HEADERSKECCAK) test_kyber.c randombytes.c
 	$(CC) $(CFLAGS) -DKYBER_K=4 $(SOURCESKECCAK) randombytes.c test_kyber.c -o test_kyber1024
+test_kyber1024.ihex: test_kyber1024
+	$(OBJCOPY) -O ihex $< $@
+test_kyber1024.coe: test_kyber1024
+	python $(ORCA_ROOT)/tools/hex2coe.py $<.hex -o $@
 
 test_kex512: $(SOURCESKECCAK) $(HEADERSKECCAK) test_kex.c randombytes.c
 	$(CC) $(CFLAGS) -DKYBER_K=2 $(SOURCESKECCAK) randombytes.c test_kex.c -o test_kex512

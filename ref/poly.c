@@ -6,6 +6,12 @@
 #include "cbd.h"
 #include "symmetric.h"
 
+#include "fpau_switches.h"
+
+#ifdef PROFILING_NTT_INTT
+#include "uart.h"
+#endif
+
 /*************************************************
 * Name:        poly_compress
 *
@@ -243,8 +249,25 @@ void poly_getnoise_eta2(poly *r, const uint8_t seed[KYBER_SYMBYTES], uint8_t non
 **************************************************/
 void poly_ntt(poly *r)
 {
+#ifdef PROFILING_NTT_INTT
+  register uint32_t cycle_start asm("s2");
+  register uint32_t cycle_end asm("s3");
+
+  uart_send_string("\n\rNTT:");
+
+  asm volatile("csrrs s2, "TICKS_REGISTER", zero");
+#endif
   ntt(r->coeffs);
+
+#ifndef FPAU
   poly_reduce(r);
+#endif
+
+#ifdef PROFILING_NTT_INTT
+  asm volatile("csrrs s3, "TICKS_REGISTER", zero");
+
+  print_runtime(cycle_start, cycle_end);
+#endif
 }
 
 /*************************************************
@@ -258,7 +281,22 @@ void poly_ntt(poly *r)
 **************************************************/
 void poly_invntt_tomont(poly *r)
 {
+  #ifdef PROFILING_NTT_INTT
+  register uint32_t cycle_start asm("s2");
+  register uint32_t cycle_end asm("s3");
+
+  uart_send_string("\n\rInverse NTT:");
+
+  asm("csrrs s2, "TICKS_REGISTER", zero");
+  #endif
+
   invntt(r->coeffs);
+
+  #ifdef PROFILING_NTT_INTT
+  asm("csrrs s3, "TICKS_REGISTER", zero");
+
+  print_runtime(cycle_start, cycle_end);
+  #endif
 }
 
 /*************************************************
@@ -322,8 +360,32 @@ void poly_reduce(poly *r)
 void poly_add(poly *r, const poly *a, const poly *b)
 {
   unsigned int i;
-  for(i=0;i<KYBER_N;i++)
+
+#ifdef FPAU
+  register uint32_t coeff0 asm("s6");
+  register uint32_t coeff1 asm("s7");
+#ifndef STEEL
+  asm volatile("nop"); // base addresses update
+#endif
+#endif
+
+  for(i=0;i<KYBER_N;i++) {
+#ifdef FPAU
+    coeff0 = a->coeffs[i];
+    coeff1 = b->coeffs[i];
+
+#ifndef STEEL
+    asm volatile("nop"); // ORCA
+    asm volatile("nop"); // ORCA
+    asm volatile("nop"); // ORCA
+#endif
+    asm volatile("fpau.kyb.bf %0, %1, %2\n": : "r"(coeff0), "r"(coeff1),"r"(1): );  // use of bf to not overwrite "1" constant (output1 = coeff0 + coeff1*1)
+
+    r->coeffs[i] = coeff0;
+#else // FPAU
     r->coeffs[i] = a->coeffs[i] + b->coeffs[i];
+#endif
+  }
 }
 
 /*************************************************
@@ -338,6 +400,29 @@ void poly_add(poly *r, const poly *a, const poly *b)
 void poly_sub(poly *r, const poly *a, const poly *b)
 {
   unsigned int i;
-  for(i=0;i<KYBER_N;i++)
+
+#ifdef FPAU
+  register uint32_t coeff0 asm("s6");
+  register uint32_t coeff1 asm("s7");
+#endif
+
+  for(i=0;i<KYBER_N;i++){
+#ifdef FPAU
+    coeff0 = a->coeffs[i];
+    coeff1 = b->coeffs[i];
+
+#ifndef STEEL
+    asm volatile("nop"); // ORCA
+    asm volatile("nop"); // ORCA
+    asm volatile("nop"); // ORCA
+#endif
+    asm volatile("fpau.kyb.bf %0, %1, %2\n": : "r"(coeff0), "r"(coeff1),"r"(1): );  // use of bf to not overwrite "1" constant (output2 = coeff0 - coeff1*1)
+
+    asm volatile("nop"); // ORCA and STEEL (2nd output written in next cycle)
+
+    r->coeffs[i] = coeff1;
+#else // FPAU
     r->coeffs[i] = a->coeffs[i] - b->coeffs[i];
+#endif
+  }
 }

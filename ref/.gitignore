@@ -1,3 +1,9 @@
+*.txt
+*.map
+*.coe
+*.d
+*.hex
+*.ihex
 *.so
 *.o
 test_kex1024

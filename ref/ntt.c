@@ -3,6 +3,10 @@
 #include "ntt.h"
 #include "reduce.h"
 
+#include "fpau_switches.h"
+
+//#define FPAU
+
 /* Code to generate zetas and zetas_inv used in the number-theoretic transform:
 
 #define KYBER_ROOT_OF_UNITY 17
@@ -35,7 +39,18 @@ void init_ntt() {
   }
 }
 */
-
+#ifdef FPAU
+const int16_t zetas[128] = {
+1, -1600, -749, -40, -687, 630, -1432, 848, 1062, -1410, 193, 797, -543, -69, 569, -1583, 
+296, -882, 1339, 1476, -283, 56, -1089, 1333, 1426, -1235, 535, -447, -936, -450, -1355, 821, 
+289, 331, -76, -1573, 1197, -1025, -1052, -1274, 650, -1352, -816, 632, -464, 33, 1320, -1414, 
+-1010, 1435, 807, 452, 1438, -461, 1534, -927, -682, -712, 1481, 648, -855, -219, 1227, 910, 
+17, -568, 583, -680, 1637, 723, -1041, 1100, 1409, -667, -48, 233, 756, -1173, -314, -279, 
+-1626, 1651, -540, -1540, -1482, 952, 1461, -642, 939, -1021, -892, -941, 733, -992, 268, 641, 
+1584, -1031, -1292, -109, 375, -780, -1239, 1645, 1063, 319, -556, 757, -1230, 561, -863, -735, 
+-525, 1092, 403, 1026, 1143, -1179, -554, 886, -1607, 1212, -1455, 1029, -1219, -394, 885, -1175
+};
+#else
 const int16_t zetas[128] = {
   -1044,  -758,  -359, -1517,  1493,  1422,   287,   202,
    -171,   622,  1577,   182,   962, -1202, -1474,  1468,
@@ -54,7 +69,7 @@ const int16_t zetas[128] = {
   -1185, -1530, -1278,   794, -1510,  -854,  -870,   478,
    -108,  -308,   996,   991,   958, -1460,  1522,  1628
 };
-
+#endif
 /*************************************************
 * Name:        fqmul
 *
@@ -65,9 +80,11 @@ const int16_t zetas[128] = {
 *
 * Returns 16-bit integer congruent to a*b*R^{-1} mod q
 **************************************************/
+#ifndef FPAU
 static int16_t fqmul(int16_t a, int16_t b) {
   return montgomery_reduce((int32_t)a*b);
 }
+#endif
 
 /*************************************************
 * Name:        ntt
@@ -78,17 +95,59 @@ static int16_t fqmul(int16_t a, int16_t b) {
 * Arguments:   - int16_t r[256]: pointer to input/output vector of elements of Zq
 **************************************************/
 void ntt(int16_t r[256]) {
+#ifdef FPAU
+  register uint32_t len asm("s9"), j asm("s2"), k asm("s3");
+  //register int32_t zeta asm("s4");
+
+  register uint32_t coeff0 asm("s6");
+  register uint32_t coeff1 asm("s7");
+
+  unsigned int start;
+  int32_t zeta;
+#else
   unsigned int len, start, j, k;
   int16_t t, zeta;
+#endif
 
   k = 1;
   for(len = 128; len >= 2; len >>= 1) {
     for(start = 0; start < 256; start = j + len) {
       zeta = zetas[k++];
       for(j = start; j < start + len; j++) {
+#ifdef FPAU
+        //coeff0 = a[j];
+        //coeff1 = a[j + len];
+
+        // load coeff0
+        asm volatile("mv t0, s2");
+        asm volatile("slli t0, t0, 0x1");
+        asm volatile("add t0, a0, t0");
+        asm volatile("lh s6, 0(t0)");
+
+        // load coeff1
+        asm volatile("add t1, s2, s9");
+        asm volatile("slli t1, t1, 0x1");
+        asm volatile("add t1, a0, t1");
+        asm volatile("lh s7, 0(t1)");
+
+        // Compute butterfly operation
+#ifndef STEEL
+        asm volatile("nop"); // ORCA
+        asm volatile("nop"); // ORCA
+        asm volatile("nop"); // ORCA
+#endif
+        asm volatile("fpau.kyb.bf %0, %1,%2\n":"=r"(coeff0):"r"(coeff1),"r"(zeta): );
+
+        // Store results in same position
+        asm volatile("sh s6, 0(t0)");
+        asm volatile("nop"); //ORCA and STEEL (2nd output written in next cycle)
+        asm volatile("sh s7, 0(t1)");
+
+#else
         t = fqmul(zeta, r[j + len]);
         r[j + len] = r[j] - t;
         r[j] = r[j] + t;
+#endif
       }
     }
   }
@@ -104,25 +163,94 @@ void ntt(int16_t r[256]) {
 * Arguments:   - int16_t r[256]: pointer to input/output vector of elements of Zq
 **************************************************/
 void invntt(int16_t r[256]) {
+#ifdef FPAU
+  register uint32_t len asm("s9"), j asm("s2"), k asm("s3");
+  //register int32_t zeta asm("s4");
+
+  register uint32_t coeff0 asm("s6");
+  register uint32_t coeff1 asm("s7");
+  register uint32_t zero asm("zero");
+
+  register const uint32_t ninv asm("s8") = 3303; //512; // mont/128
+
+  unsigned int start;
+  int32_t zeta;
+  // Note: When compiling with -O3 flag, the base address is moved from a0 to a1 register, so it is the one used within the nestes for loop
+#else
   unsigned int start, len, j, k;
   int16_t t, zeta;
   const int16_t f = 1441; // mont^2/128
+#endif
 
   k = 127;
   for(len = 2; len <= 128; len <<= 1) {
     for(start = 0; start < 256; start = j + len) {
-      zeta = zetas[k--];
+      zeta = -zetas[k--];
       for(j = start; j < start + len; j++) {
+#ifdef FPAU
+        //coeff0 = a[j];
+        //coeff1 = a[j + len];
+
+        // load coeff0
+        asm volatile("mv t0, s2");
+        asm volatile("slli t0, t0, 0x1");
+        asm volatile("add t0, a1, t0");
+        asm volatile("lh s6, 0(t0)");
+
+        // load coeff1
+        asm volatile("add t1, s2, s9");
+        asm volatile("slli t1, t1, 0x1");
+        asm volatile("add t1, a1, t1");
+        asm volatile("lh s7, 0(t1)");
+
+        // Compute butterfly operation
+#ifndef STEEL
+        asm volatile("nop"); // ORCA
+        asm volatile("nop"); // ORCA
+        asm volatile("nop"); // ORCA
+#endif
+        asm volatile("fpau.kyb.bfinv %0, %1,%2\n":"=r"(coeff0):"r"(coeff1),"r"(zeta): );
+
+        // Store results in same position
+        asm volatile("sh s6, 0(t0)");
+        asm volatile("nop"); //ORCA and STEEL (2nd output written in next cycle)
+        asm volatile("sh s7, 0(t1)");
+#else
         t = r[j];
         r[j] = barrett_reduce(t + r[j + len]);
         r[j + len] = r[j + len] - t;
         r[j + len] = fqmul(zeta, r[j + len]);
+#endif
       }
     }
   }
 
+#ifdef FPAU
+
+  for(j = 0; j < KYBER_N; ++j) {
+    // load coeff
+    coeff0 = r[j];
+    //coeff1 = ninv; //needed since s7 is overwritten by FPAU
+    asm volatile("mv %0, %1\n": "=r"(coeff1) : "r"(ninv) :);
+
+    // multiply by ninv
+#ifndef STEEL
+    asm volatile("nop"); // ORCA
+    asm volatile("nop"); // ORCA
+    asm volatile("nop"); // ORCA
+#endif
+    asm volatile("fpau.kyb.mac %0, %1, %2\n": : "r"(coeff0), "r"(coeff1),"r"(zero): );
+#ifndef STEEL
+    asm volatile("nop"); // ORCA
+#endif
+
+    // store result
+    r[j] = coeff0;
+  }
+#else
   for(j = 0; j < 256; j++)
     r[j] = fqmul(r[j], f);
+#endif
 }
 
 /*************************************************
@@ -138,9 +266,67 @@ void invntt(int16_t r[256]) {
 **************************************************/
 void basemul(int16_t r[2], const int16_t a[2], const int16_t b[2], int16_t zeta)
 {
+#ifdef FPAU
+  register uint32_t a0 asm("s1"), a1 asm("s2"), b0 asm("s3"), b1 asm("s4");
+  register uint32_t a0c asm("s5"), a1c asm("s6"), b0c asm("s7"), b1c asm("s8");
+  register int32_t zetac asm("s9");
+
+  register uint32_t zero asm("zero");
+
+  // not specifying registers doesn't work since compiler reuses same registers in all mac instructions (sees no outputs in asm extended)
+  // if defining output in asm extended, same register is used for second argument, -O3 build simply eliminates this function
+  //uint32_t a0, a1, b0, b1;     
+  //uint32_t a0c, a1c, b0c, b1c; 
+
+  a0  = a[0];
+  a0c = a[0]; // copies needed since FPAU overwrites both input registers
+  a1  = a[1];
+  a1c = a[1];
+  b0  = b[0];
+  b0c = b[0];
+  b1  = b[1];
+  b1c = b[1];
+  zetac = zeta;
+
+  asm volatile("fpau.kyb.mac %0, %1, %2\n": : "r"(a1), "r"(b1),"r"(zero): );     // a1*b1
+#ifndef STEEL
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+#endif
+  asm volatile("fpau.kyb.mac %0, %1, %2\n": : "r"(zetac), "r"(a1),"r"(zero): );  // a1*b1*zeta
+#ifndef STEEL
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+#endif
+  asm volatile("fpau.kyb.mac %0, %1, %2\n": : "r"(a0), "r"(b0),"r"(zetac): ); // a1*b1*zeta + a0*b0
+
+  r[0] = a0;
+
+#ifndef STEEL
+  asm volatile("nop");                        // ORCA (wait for FPAU to be free in decode stage)
+#endif
+
+  asm volatile("fpau.kyb.mac %0, %1, %2\n": : "r"(a0c), "r"(b1c),"r"(zero): );   // a0*b1
+#ifndef STEEL
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+  asm volatile("nop");                        // ORCA
+#endif
+  asm volatile("fpau.kyb.mac %0, %1, %2\n": : "r"(a1c), "r"(b0c),"r"(a0c): ); // a0*b1 + a1*b0
+
+  //r[1] = a1c;
+  asm volatile("sh s6, 2(a0)"); // specify to use a1c, since compiler doesn't see that a1c is changed and uses a1 instead
+
+#else
   r[0]  = fqmul(a[1], b[1]);
   r[0]  = fqmul(r[0], zeta);
   r[0] += fqmul(a[0], b[0]);
   r[1]  = fqmul(a[0], b[1]);
   r[1] += fqmul(a[1], b[0]);
+#endif // FPAU
 }

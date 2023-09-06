@@ -3,6 +3,12 @@
 #include "poly.h"
 #include "polyvec.h"
 
+#include "fpau_switches.h"
+
+#ifdef PROFILING_MULT
+#include "uart.h"
+#endif
+
 /*************************************************
 * Name:        polyvec_compress
 *
@@ -191,13 +197,26 @@ void polyvec_basemul_acc_montgomery(poly *r, const polyvec *a, const polyvec *b)
   unsigned int i;
   poly t;
 
+#ifdef PROFILING_MULT
+  register uint32_t cycle_start asm("s4");
+  register uint32_t cycle_end asm("s3");
+
+  uart_send_string("\n\rMULT poly_basemul");
+  asm("csrrs s4, "TICKS_REGISTER", zero");
+#endif
   poly_basemul_montgomery(r, &a->vec[0], &b->vec[0]);
+#ifdef PROFILING_MULT
+  asm("csrrs s3, "TICKS_REGISTER", zero");
+  print_runtime(cycle_start, cycle_end);
+#endif
+
   for(i=1;i<KYBER_K;i++) {
     poly_basemul_montgomery(&t, &a->vec[i], &b->vec[i]);
     poly_add(r, r, &t);
   }
-
+#ifndef FPAU
   poly_reduce(r);
+#endif
 }
 
 /*************************************************
