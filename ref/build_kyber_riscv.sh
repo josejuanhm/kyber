@@ -43,7 +43,7 @@ then
   sudo make clean
   sudo make $TEST
   sudo ./elf2hex.sh $TEST
-  sudo cp test/$TEST.hex ../../../riscv_cores/riscv-steel-core/hello_world/program.mem
+  sudo cp $TEST.hex ../../../riscv_cores/riscv-steel-core/hello_world/program.mem
   sudo /opt/riscv/bin/riscv32-unknown-elf-objdump -d -S $CWD/$TEST > $CWD/generated_asm_$TEST.txt
   sed -i 's/^`define MULTIPLE_CYCLES/\/\/`define MULTIPLE_CYCLES/' ../../../rtl/fpau_top.sv
 else
