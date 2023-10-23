@@ -1,3 +1,10 @@
+///////////////////////////////////////////////////////////////////////////////////////
+// October 22, 2023 - Modified by José Juan Hernández-Morales
+//   Adding testing and execution time profiling instructions for RISC-V instruction 
+//   set extension. 
+//   Repository: https://github.com/josejuanhm/fpau
+///////////////////////////////////////////////////////////////////////////////////////
+
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -79,6 +86,9 @@ static int test_keys(unsigned int i)
 #endif
 
   if(memcmp(key_a, key_b, CRYPTO_BYTES)) {
+#ifndef FPAU
+    printf("ERROR keys\n");
+#endif
 #ifdef UART
     uart_send_string("\n\rERROR keys");
 #endif
@@ -127,7 +137,12 @@ static int test_invalid_sk_a()
   crypto_kem_dec(key_a, ct, sk);
 
   if(!memcmp(key_a, key_b, CRYPTO_BYTES)) {
+#ifndef FPAU
+    printf("ERROR invalid sk\n");
+#endif
+#ifdef UART
     uart_send_string("ERROR invalid sk\n");
+#endif
     return 1;
   }
 
@@ -162,7 +177,12 @@ static int test_invalid_ciphertext()
   crypto_kem_dec(key_a, ct, sk);
 
   if(!memcmp(key_a, key_b, CRYPTO_BYTES)) {
+#ifndef FPAU
+    prinfr("ERROR invalid ciphertext\n");
+#endif
+#ifdef UART
     uart_send_string("ERROR invalid ciphertext\n");
+#endif
     return 1;
   }
 

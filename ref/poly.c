@@ -1,3 +1,10 @@
+///////////////////////////////////////////////////////////////////////////////////////
+// October 22, 2023 - Modified by José Juan Hernández-Morales
+//   Adding mainly assembly and testing instructions for designed RISC-V instruction 
+//   set extension.
+//   Repository: https://github.com/josejuanhm/fpau
+///////////////////////////////////////////////////////////////////////////////////////
+
 #include <stdint.h>
 #include "params.h"
 #include "poly.h"

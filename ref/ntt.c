@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////////////////////////////////////
+// October 22, 2023 - Modified by José Juan Hernández-Morales
+//   Adding mainly assembly instructions for designed RISC-V instruction set extension
+//   Repository: https://github.com/josejuanhm/fpau
+///////////////////////////////////////////////////////////////////////////////////////
+
 #include <stdint.h>
 #include "params.h"
 #include "ntt.h"
@@ -185,7 +191,11 @@ void invntt(int16_t r[256]) {
   k = 127;
   for(len = 2; len <= 128; len <<= 1) {
     for(start = 0; start < 256; start = j + len) {
+#ifdef FPAU
       zeta = -zetas[k--];
+#else
+      zeta = zetas[k--];
+#endif
       for(j = start; j < start + len; j++) {
 #ifdef FPAU
         //coeff0 = a[j];

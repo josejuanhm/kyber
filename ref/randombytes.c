@@ -1,3 +1,9 @@
+///////////////////////////////////////////////////////////////////////////////////////
+// October 19, 2023 - Modified by José Juan Hernández-Morales
+//   Using RISC-V friendly randombytes() function, also defined in test_vectors.c
+//   Repository: https://github.com/josejuanhm/fpau
+///////////////////////////////////////////////////////////////////////////////////////
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>

@@ -1,3 +1,10 @@
+///////////////////////////////////////////////////////////////////////////////////////
+// October 22, 2023 - Modified by José Juan Hernández-Morales
+//   Adding execution time profiling instructions for RISC-V instruction 
+//   set extension, as well as removing the call of now unnecessary reduction functions. 
+//   Repository: https://github.com/josejuanhm/fpau
+///////////////////////////////////////////////////////////////////////////////////////
+
 #include <stdint.h>
 #include "params.h"
 #include "poly.h"
